@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LilParser - Log Analyzer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* ... existing styles ... */
+        :root {
+            --bg-grad-start: #020617;
+            --bg-grad-end: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.4);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --accent: #8b5cf6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-grad-start), var(--bg-grad-end));
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 2rem;
+            line-height: 1.5;
+        }
+
+        /* --- Global Login Overlay --- */
+        #loginOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, #020617, #0f172a);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .login-box {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 3rem 2.5rem;
+            border-radius: 24px;
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        }
+
+        .login-box h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            justify-content: center;
+        }
+
+        .login-box p {
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        #globalLoginError {
+            display: none;
+            color: var(--danger);
+            background: rgba(220, 38, 38, 0.1);
+            border: 1px dashed rgba(220, 38, 38, 0.3);
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+
+        /* --- End Login Overlay --- */
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 2.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.5s ease-out;
+            display: none;
+            /* Hidden until unlocked! */
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.025em;
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        .section {
+            margin-bottom: 1.5rem;
+            background: rgba(15, 23, 42, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--glass-border);
+            transition: all 0.3s ease;
+        }
+
+        .section:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* File Input */
+        .file-drop-area {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 120px;
+            border: 2px dashed rgba(59, 130, 246, 0.5);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .file-drop-area:hover,
+        .file-drop-area.dragover {
+            border-color: var(--primary);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .file-drop-area input[type="file"] {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .file-msg {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+        }
+
+        #fileList {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: var(--success);
+            font-weight: 500;
+        }
+
+        /* Inputs */
+        input[type="text"],
+        textarea {
+            width: 100%;
+            background: rgba(2, 6, 23, 0.5);
+            border: 1px solid var(--glass-border);
+            color: var(--text-main);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s;
+            resize: vertical;
+        }
+
+        input[type="text"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        .input-hint {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+            display: block;
+        }
+
+        /* Switches */
+        .switch-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding: 0.5rem 0;
+        }
+
+        .switch-container:last-child {
+            margin-bottom: 0;
+        }
+
+        .switch-label {
+            font-weight: 500;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .switch-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 400;
+            margin-top: 0.2rem;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .4s;
+            border-radius: 24px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background-color: var(--text-muted);
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: var(--primary);
+            border-color: var(--primary);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(24px);
+            background-color: white;
+        }
+
+        /* Advanced Section */
+        #advancedSection {
+            display: none;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--glass-border);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        #advancedSection.visible {
+            display: block;
+        }
+
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            color: var(--text-main);
+        }
+
+        .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+        }
+
+        .btn-danger:hover {
+            background: var(--danger-hover);
+        }
+
+        .btn-full {
+            width: 100%;
+            padding: 1rem;
+            font-size: 1.1rem;
+            margin-top: 1rem;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            border: none;
+            box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.39);
+        }
+
+        .btn-full:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px 0 rgba(99, 102, 241, 0.5);
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        }
+
+        .btn-full:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .flex-row-between {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .admin-section {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: rgba(220, 38, 38, 0.05);
+            border: 1px dashed rgba(220, 38, 38, 0.3);
+            border-radius: 12px;
+        }
+
+        .admin-section.unlocked {
+            background: rgba(16, 185, 129, 0.05);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        #managementBtnContainer {
+            display: none;
+            margin-top: 1rem;
+        }
+
+        #managementBtnContainer.visible {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        /* Progress Modal */
+        #progressModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(2, 6, 23, 0.8);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .progress-box {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 2rem;
+            border-radius: 16px;
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Global Password Login Overlay -->
+    <div id="loginOverlay">
+        <div class="login-box">
+            <h2>Authorized Access</h2>
+            <p>Please enter the shared password to use LilParser.</p>
+            <form id="globalLoginForm" onsubmit="handleGlobalLogin(event)">
+                <input type="password" id="globalPasswordInput" placeholder="Password"
+                    style="font-size: 1.1rem; padding: 1rem; text-align: center; letter-spacing: 0.1em; margin-bottom: 0.5rem;"
+                    required>
+                <button type="submit" class="btn btn-full" style="margin-top: 0.5rem;">Access System</button>
+            </form>
+            <div id="globalLoginError">Incorrect password. Please try again.</div>
+        </div>
+    </div>
+
+    <!-- Main Parser App (Hidden Initially) -->
+    <div class="container" id="mainAppContainer">
+        <h1>LilParser</h1>
+        <p class="subtitle">Log Parsing & Context Analyzer</p>
+
+        <div class="section">
+            <h2>1. Input Files</h2>
+            <div class="file-drop-area" id="dropArea">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.5rem;">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <div class="file-msg">Drag & Drop .log or .gz files here</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">or click to browse</div>
+                <input type="file" id="fileInput" accept=".log,.gz" multiple>
+            </div>
+            <div id="fileList"></div>
+        </div>
+
+        <div class="section">
+            <h2>2. Target Users</h2>
+            <textarea id="usernamesInput" rows="2"
+                placeholder="Enter usernames separated by commas or spaces..."></textarea>
+            <span class="input-hint">Leave blank if using Management Parsing</span>
+        </div>
+
+        <div class="section">
+            <h2>3. Parsing Modes</h2>
+
+            <div class="switch-container">
+                <div class="switch-label">
+                    Strict Mode
+                    <span class="switch-desc">Only show parsed hits (No surrounding context)</span>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="strictMode">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="switch-container">
+                <div class="switch-label">
+                    Chat Only
+                    <span class="switch-desc">Only parse executed chat messages and /msg, /r, /mail</span>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="chatOnly">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="switch-container">
+                <div class="switch-label">
+                    Commands Only
+                    <span class="switch-desc">Only parse executed server commands</span>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="commandsOnly">
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <button class="btn btn-outline" id="toggleAdvancedBtn" style="width: 100%; margin-bottom: 1rem;">
+            Advanced Options +
+        </button>
+
+        <div id="advancedSection">
+            <div class="section">
+                <div class="flex-row-between">
+                    <h2>Custom Searching</h2>
+                    <button class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" id="louiseSoapBtn">
+                        Get Louise's Soap
+                    </button>
+                </div>
+                <textarea id="customSearchInput" rows="2"
+                    placeholder="Enter custom words/phrases to search for (comma separated)..."></textarea>
+            </div>
+
+            <div class="admin-section" id="adminSection">
+                <h2>Admin Access</h2>
+                <input type="password" id="adminPassword" placeholder="Enter Admin Password">
+
+                <div id="managementBtnContainer">
+                    <button class="btn btn-danger btn-full" id="managementBtn" style="margin-top: 1rem;">
+                        Management Parsing
+                    </button>
+                    <span class="input-hint" style="text-align: center; color: var(--danger);">Extracts ALL chat &
+                        commands for ALL players</span>
+                </div>
+            </div>
+        </div>
+
+        <button class="btn btn-full" id="parseBtn" disabled>
+            Start Parsing
+        </button>
+    </div>
+
+    <!-- Progress Modal -->
+    <div id="progressModal" style="display: none;">
+        <div class="progress-box">
+            <div class="spinner"></div>
+            <h3 style="margin-bottom: 0.5rem;" id="progressTitle">Processing Files...</h3>
+            <p id="progressStatus" style="color: var(--text-muted); font-size: 0.9rem;">Reading and decompressing</p>
+        </div>
+    </div>
+
+    <script>
+        // --- Global Password Gateway Logic --- //
+        const EXPECTED_PASSWORD = "Jer@Mods0nT0p";
+
+        // Use sessionStorage to remember unlock status across soft refreshes within the same tab,
+        // but it will reset if they close the tab/browser.
+        if (sessionStorage.getItem("lilParserUnlocked") === "true") {
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('mainAppContainer').style.display = 'block';
+        }
+
+        function handleGlobalLogin(e) {
+            e.preventDefault();
+            const passInput = document.getElementById('globalPasswordInput').value;
+            const errorMsg = document.getElementById('globalLoginError');
+
+            if (passInput === EXPECTED_PASSWORD) {
+                // Success! Fade out logic
+                const overlay = document.getElementById('loginOverlay');
+                overlay.style.transition = 'opacity 0.4s ease';
+                overlay.style.opacity = '0';
+                setTimeout(() => {
+                    overlay.style.display = 'none';
+                    document.getElementById('mainAppContainer').style.display = 'block';
+                    sessionStorage.setItem("lilParserUnlocked", "true");
+                }, 400);
+            } else {
+                errorMsg.style.display = 'block';
+                // Shake animation for error
+                const loginBox = document.querySelector('.login-box');
+                loginBox.style.transform = 'translateX(-10px)';
+                setTimeout(() => loginBox.style.transform = 'translateX(10px)', 50);
+                setTimeout(() => loginBox.style.transform = 'translateX(-10px)', 100);
+                setTimeout(() => loginBox.style.transform = 'translateX(10px)', 150);
+                setTimeout(() => loginBox.style.transform = 'translateX(0)', 200);
+            }
+        }
+        // --- End Gateway Logic --- //
+
+        // DOM Elements
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const parseBtn = document.getElementById('parseBtn');
+        const toggleAdvancedBtn = document.getElementById('toggleAdvancedBtn');
+        const advancedSection = document.getElementById('advancedSection');
+        const louiseSoapBtn = document.getElementById('louiseSoapBtn');
+        const customSearchInput = document.getElementById('customSearchInput');
+        const adminPassword = document.getElementById('adminPassword');
+        const adminSection = document.getElementById('adminSection');
+        const managementBtnContainer = document.getElementById('managementBtnContainer');
+        const managementBtn = document.getElementById('managementBtn');
+        const progressModal = document.getElementById('progressModal');
+        const progressStatus = document.getElementById('progressStatus');
+
+        // Settings Elements
+        const usernamesInput = document.getElementById('usernamesInput');
+        const strictModeSwitch = document.getElementById('strictMode');
+        const chatOnlySwitch = document.getElementById('chatOnly');
+        const commandsOnlySwitch = document.getElementById('commandsOnly');
+
+        let selectedFiles = [];
+        const CONTEXT_LINES = 15;
+        const ADMIN_PASS = "Be_Productive_XD";
+        const LOUISE_SOAP_WORDS = "fuck, faggot, fagot, nazi, nigger, nigga, asshole, bitch, dick, pussy, retard, wank, anus, cunt, twat, twot, slut, ejaculate, masturbate, blowjob, hitler";
+
+        // File Drag & Drop logic
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.remove('dragover'), false);
+        });
+
+        dropArea.addEventListener('drop', handleDrop, false);
+        fileInput.addEventListener('change', handleFiles, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles({ target: { files: files } });
+        }
+
+        function handleFiles(e) {
+            selectedFiles = Array.from(e.target.files).filter(f => f.name.endsWith('.log') || f.name.endsWith('.gz'));
+            updateFileList();
+        }
+
+        function updateFileList() {
+            if (selectedFiles.length > 0) {
+                fileList.innerHTML = `${selectedFiles.length} file(s) selected: <br>` +
+                    selectedFiles.map(f => `<span style="color: var(--text-muted)">${f.name}</span>`).join('<br>');
+                parseBtn.disabled = false;
+            } else {
+                fileList.innerHTML = '';
+                parseBtn.disabled = true;
+            }
+        }
+
+        // UI Interactions
+        toggleAdvancedBtn.addEventListener('click', () => {
+            advancedSection.classList.toggle('visible');
+            toggleAdvancedBtn.textContent = advancedSection.classList.contains('visible') ? 'Advanced Options -' : 'Advanced Options +';
+        });
+
+        louiseSoapBtn.addEventListener('click', () => {
+            customSearchInput.value = (customSearchInput.value ? customSearchInput.value + ", " : "") + LOUISE_SOAP_WORDS;
+        });
+
+        // Mutually exclusive switches
+        chatOnlySwitch.addEventListener('change', () => {
+            if (chatOnlySwitch.checked) commandsOnlySwitch.checked = false;
+        });
+
+        commandsOnlySwitch.addEventListener('change', () => {
+            if (commandsOnlySwitch.checked) chatOnlySwitch.checked = false;
+        });
+
+        adminPassword.addEventListener('input', () => {
+            if (adminPassword.value === ADMIN_PASS) {
+                adminSection.classList.add('unlocked');
+                managementBtnContainer.classList.add('visible');
+            } else {
+                adminSection.classList.remove('unlocked');
+                managementBtnContainer.classList.remove('visible');
+            }
+        });
+
+        // Parsing Utilities
+        const LINE_REGEX = /^\[(\d{2}:\d{2}:\d{2})\] \[(.*?)\]: (.*)$/;
+        const EXPLICIT_CHAT_REGEX = /\[CHAT\]/;
+        const COMMAND_REGEX = / issued server command: (.*)$/;
+        const CHAT_COMMANDS = ['/msg', '/r', '/mail'];
+
+        function parseUsernames(inputStr) {
+            return inputStr.split(/[\s,]+/).filter(u => u.length > 0).map(u => u.toLowerCase());
+        }
+
+        function parseCustomWords(inputStr) {
+            return inputStr.split(/[,]+/).map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
+        }
+
+        async function readAllLines(files) {
+            let lines = [];
+            for (let file of selectedFiles) {
+                progressStatus.innerText = `Reading ${file.name}...`;
+                if (file.name.endsWith('.gz')) {
+                    lines = lines.concat(await readGzFile(file));
+                } else {
+                    lines = lines.concat(await readTextFile(file));
+                }
+            }
+            return lines;
+        }
+
+        function readTextFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result.split(/\r?\n/));
+                reader.onerror = reject;
+                reader.readAsText(file);
+            });
+        }
+
+        async function readGzFile(file) {
+            try {
+                const ds = new DecompressionStream('gzip');
+                const decompressedStream = file.stream().pipeThrough(ds);
+                const reader = decompressedStream.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let result = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    result += decoder.decode(value, { stream: true });
+                }
+                result += decoder.decode(); // flush
+                return result.split(/\r?\n/);
+            } catch (err) {
+                console.error("GZ decomp failed, maybe it is a corrupted gz or standard text.", err);
+                return await readTextFile(file); // fallback
+            }
+        }
+
+        function cleanLine(lineStr, matchGroups) {
+            if (!matchGroups) {
+                const manualMatch = lineStr.match(LINE_REGEX);
+                if (manualMatch) {
+                    return manualMatch[3]; // Keep payload only, Remove Timestamp and Thread completely
+                }
+                return lineStr; // Unformatted line fallback
+            }
+            return matchGroups[3];
+        }
+
+        function analyzeLine(rawLine, usernames, customWords, isManagementMode) {
+            const match = rawLine.match(LINE_REGEX);
+            if (!match) return { isHit: false, cleaned: rawLine, isCommand: false, isChat: false, user: null };
+
+            const time = match[1];
+            const thread = match[2];
+            let payload = match[3];
+
+            let isChat = EXPLICIT_CHAT_REGEX.test(payload);
+            let isCommand = false;
+            let user = null;
+            let executedCmd = null;
+
+            const cmdMatch = payload.match(/^(.*?) issued server command: (.*)$/);
+            if (cmdMatch) {
+                const executedCmdText = cmdMatch[2];
+                // Exclude /paper:callback noise entirely
+                if (!executedCmdText.toLowerCase().startsWith('/paper:callback')) {
+                    isCommand = true;
+                    user = cmdMatch[1].toLowerCase();
+                    executedCmd = executedCmdText;
+                }
+            } else if (isChat) {
+                // Try to extract username from chat
+                // [CHAT] [L] [STAFF] Admin user > msg
+                // [CHAT] [L] Admin user > msg
+                // Example: [SurvivalCore] [CHAT] [L] Dragon Slayer gigachatboy [GREEN] > is that how the math works?
+                // Just use generic search for the username since format can vary heavily by plugins
+            }
+
+            // Determine if hit
+            let isHit = false;
+            payload = payload.toLowerCase();
+
+            if (isManagementMode) {
+                // Management mode: all chat and commands are hits
+                if (isChat || isCommand) isHit = true;
+            } else {
+                // Normal mode
+                let matchesUser = usernames.length === 0; // If no users specified, match all for rules
+                if (usernames.length > 0) {
+                    if (isCommand && usernames.includes(user)) matchesUser = true;
+                    if (!isCommand) { // checking payload for username 
+                        matchesUser = usernames.some(u => payload.includes(u));
+                    }
+                }
+
+                if (matchesUser) {
+                    let passesTypeFilter = true;
+                    if (chatOnlySwitch.checked) {
+                        passesTypeFilter = isChat || (isCommand && executedCmd && CHAT_COMMANDS.some(c => executedCmd.toLowerCase().startsWith(c)));
+                    } else if (commandsOnlySwitch.checked) {
+                        passesTypeFilter = isCommand;
+                    }
+
+                    let matchesCustom = customWords.length === 0;
+                    if (customWords.length > 0) {
+                        matchesCustom = customWords.some(w => payload.includes(w));
+                    }
+
+                    if (passesTypeFilter && matchesCustom) {
+                        isHit = true;
+                    }
+                }
+            }
+
+            // Global check: Never parse non-chat / non-command lines as hits
+            // Prevents Strict mode from accidentally passing back standard log lines
+            if (!isChat && !isCommand) {
+                isHit = false;
+            }
+
+            return {
+                isHit: isHit,
+                cleaned: match[3],
+                isCommand,
+                isChat,
+                rawLine
+            };
+        }
+
+        function isContextValid(analyzedLine, isManagementMode) {
+            // Context lines must ALWAYS be a chat message or server command regardless of mode
+            if (!analyzedLine.isChat && !analyzedLine.isCommand) return false;
+
+            // Furthermore, they must still adhere to filters if they are applied (e.g. chat only)
+            if (chatOnlySwitch.checked) {
+                return analyzedLine.isChat || (analyzedLine.isCommand && CHAT_COMMANDS.some(c => analyzedLine.cleaned.toLowerCase().includes(" issued server command: " + c)));
+            }
+            if (commandsOnlySwitch.checked) {
+                return analyzedLine.isCommand;
+            }
+            return true;
+        }
+
+        async function processLogs(isManagementMode = false) {
+            if (selectedFiles.length === 0) return;
+
+            progressModal.style.display = 'flex';
+            progressStatus.innerText = 'Extracting data...';
+
+            await new Promise(r => setTimeout(r, 50)); // UI yield
+
+            try {
+                const usernames = parseUsernames(usernamesInput.value);
+                const customWords = parseCustomWords(customSearchInput.value);
+                const isStrict = strictModeSwitch.checked;
+
+                const allLines = await readAllLines(selectedFiles);
+                progressStatus.innerText = `Analyzing ${allLines.length} lines...`;
+
+                let output = [];
+                let hitIndices = [];
+
+                // 1. First Pass: Analyze all lines and find hits
+                let analyzedArray = [];
+                for (let i = 0; i < allLines.length; i++) {
+                    const line = allLines[i];
+                    if (!line.trim()) {
+                        analyzedArray.push(null);
+                        continue;
+                    }
+
+                    const analyzed = analyzeLine(line, usernames, customWords, isManagementMode);
+                    analyzedArray.push(analyzed);
+
+                    if (analyzed && analyzed.isHit) {
+                        hitIndices.push(i);
+                    }
+                }
+
+                progressStatus.innerText = `Found ${hitIndices.length} matches. Generating output...`;
+
+                // 2. Second Pass: Build output based on hits and context
+                if (hitIndices.length === 0) {
+                    output.push("No matches found given the criteria.");
+                } else {
+                    if (isStrict) {
+                        hitIndices.forEach(idx => output.push(analyzedArray[idx].cleaned));
+                    } else {
+                        // Gather context
+                        let lastContextEnd = -1;
+
+                        for (let i = 0; i < hitIndices.length; i++) {
+                            const hitIdx = hitIndices[i];
+                            const startIdx = Math.max(0, hitIdx - CONTEXT_LINES);
+                            const endIdx = Math.min(analyzedArray.length - 1, hitIdx + CONTEXT_LINES);
+
+                            // Calculate actual lines to add to avoid overlapping context with previous hits
+                            const actualStart = Math.max(startIdx, lastContextEnd + 1);
+
+                            if (actualStart > lastContextEnd + 1 && lastContextEnd !== -1) {
+                                output.push("\n...NEXT PARSED...\n");
+                            }
+
+                            for (let j = actualStart; j <= endIdx; j++) {
+                                const anLine = analyzedArray[j];
+                                if (!anLine) continue;
+
+                                if (isContextValid(anLine, isManagementMode)) {
+                                    output.push(anLine.cleaned);
+                                }
+                            }
+                            // Update lastContextEnd to maximum we iterated
+                            lastContextEnd = Math.max(lastContextEnd, endIdx);
+                        }
+                    }
+                }
+
+                progressStatus.innerText = 'Finalizing file...';
+
+                const blob = new Blob([output.join('\n')], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'LilParsed.log';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+            } catch (err) {
+                console.error(err);
+                alert("Error parsing logs: " + err.message);
+            } finally {
+                progressModal.style.display = 'none';
+            }
+        }
+
+        parseBtn.addEventListener('click', () => processLogs(false));
+        managementBtn.addEventListener('click', () => processLogs(true));
+
+    </script>
+</body>
+
+</html>
