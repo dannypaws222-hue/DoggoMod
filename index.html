@@ -802,7 +802,12 @@
 
     <script>
         // --- Global Password Gateway Logic --- //
-        const EXPECTED_PASSWORD = "Jer@Mods0nT0p";
+        const EXPECTED_PASSWORD_HASH = "7118c1c2bb39638fd3d65291a521c20f3fcbe03b9219e8ed2cff7bdf8bd2584e";
+
+        async function hashPassword(str) {
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
 
         // Use sessionStorage to remember unlock status across soft refreshes within the same tab,
         // but it will reset if they close the tab/browser.
@@ -811,12 +816,13 @@
             document.getElementById('mainAppContainer').style.display = 'block';
         }
 
-        function handleGlobalLogin(e) {
+        async function handleGlobalLogin(e) {
             e.preventDefault();
             const passInput = document.getElementById('globalPasswordInput').value;
             const errorMsg = document.getElementById('globalLoginError');
+            const inputHash = await hashPassword(passInput);
 
-            if (passInput === EXPECTED_PASSWORD) {
+            if (inputHash === EXPECTED_PASSWORD_HASH) {
                 // Success! Fade out logic
                 const overlay = document.getElementById('loginOverlay');
                 overlay.style.transition = 'opacity 0.4s ease';
@@ -890,8 +896,9 @@
         const commandsOnlySwitch = document.getElementById('commandsOnly');
 
         let selectedFiles = [];
+        let viewerSelectedFiles = [];
         const CONTEXT_LINES = 15;
-        const ADMIN_PASS = "Be_Productive_XD";
+        const ADMIN_PASS_HASH = "86afb151a5706bccd55ae8c514011469afc8b9a6a4a6da7e4695ced3d7d0ed9c";
         const LOUISE_SOAP_WORDS = "fuck, faggot, fagot, nazi, nigger, nigga, asshole, bitch, dick, pussy, retard, wank, anus, cunt, twat, twot, slut, ejaculate, masturbate, blowjob, hitler";
 
         // File Drag & Drop logic (Parser)
@@ -941,10 +948,21 @@
             updateViewerFileList();
         }
 
+        function buildFileListDom(files, container) {
+            container.innerHTML = '';
+            container.appendChild(document.createTextNode(`${files.length} file(s) selected: `));
+            files.forEach(f => {
+                container.appendChild(document.createElement('br'));
+                const span = document.createElement('span');
+                span.style.color = 'var(--text-muted)';
+                span.textContent = f.name;
+                container.appendChild(span);
+            });
+        }
+
         function updateFileList() {
             if (selectedFiles.length > 0) {
-                fileList.innerHTML = `${selectedFiles.length} file(s) selected: <br>` +
-                    selectedFiles.map(f => `<span style="color: var(--text-muted)">${f.name}</span>`).join('<br>');
+                buildFileListDom(selectedFiles, fileList);
                 parseBtn.disabled = false;
             } else {
                 fileList.innerHTML = '';
@@ -954,8 +972,7 @@
 
         function updateViewerFileList() {
             if (viewerSelectedFiles.length > 0) {
-                viewerFileList.innerHTML = `${viewerSelectedFiles.length} file(s) selected: <br>` +
-                    viewerSelectedFiles.map(f => `<span style="color: var(--text-muted)">${f.name}</span>`).join('<br>');
+                buildFileListDom(viewerSelectedFiles, viewerFileList);
                 startViewingBtn.disabled = false;
             } else {
                 viewerFileList.innerHTML = '';
@@ -982,8 +999,9 @@
             if (commandsOnlySwitch.checked) chatOnlySwitch.checked = false;
         });
 
-        adminPassword.addEventListener('input', () => {
-            if (adminPassword.value === ADMIN_PASS) {
+        adminPassword.addEventListener('input', async () => {
+            const inputHash = await hashPassword(adminPassword.value);
+            if (inputHash === ADMIN_PASS_HASH) {
                 adminSection.classList.add('unlocked');
                 managementBtnContainer.classList.add('visible');
             } else {
@@ -995,7 +1013,6 @@
         // Parsing Utilities
         const LINE_REGEX = /^\[(\d{2}:\d{2}:\d{2})\] \[(.*?)\]: (.*)$/;
         const EXPLICIT_CHAT_REGEX = /\[CHAT\]/;
-        const COMMAND_REGEX = / issued server command: (.*)$/;
         const CHAT_COMMANDS = ['/msg', '/r', '/mail'];
 
         function parseUsernames(inputStr) {
@@ -1137,6 +1154,7 @@
                 cleaned: match[3],
                 isCommand,
                 isChat,
+                executedCmd,
                 rawLine
             };
         }
@@ -1147,7 +1165,7 @@
 
             // Furthermore, they must still adhere to filters if they are applied (e.g. chat only)
             if (chatOnlySwitch.checked) {
-                return analyzedLine.isChat || (analyzedLine.isCommand && CHAT_COMMANDS.some(c => analyzedLine.cleaned.toLowerCase().includes(" issued server command: " + c)));
+                return analyzedLine.isChat || (analyzedLine.isCommand && analyzedLine.executedCmd && CHAT_COMMANDS.some(c => analyzedLine.executedCmd.toLowerCase().startsWith(c)));
             }
             if (commandsOnlySwitch.checked) {
                 return analyzedLine.isCommand;
@@ -1284,7 +1302,10 @@
                 renderViewerLines();
             } catch (err) {
                 console.error(err);
-                viewerTextContent.innerHTML = `<div style="color:var(--danger); padding:1rem;">Error reading files: ${err.message}</div>`;
+                const errDiv = document.createElement('div');
+                errDiv.style.cssText = 'color:var(--danger); padding:1rem;';
+                errDiv.textContent = `Error reading files: ${err.message}`;
+                viewerTextContent.appendChild(errDiv);
             }
         });
 
@@ -1351,7 +1372,14 @@
                 return;
             }
 
+            if (query.length > 500) {
+                viewerMatchCount.innerText = 'Pattern too long (max 500 chars)';
+                return;
+            }
+
             try {
+                // Validate the regex compiles before running it across all lines
+                new RegExp(query);
                 const regex = new RegExp(`(${query})`, 'gi');
                 const lines = viewerTextContent.querySelectorAll('.line');
 
