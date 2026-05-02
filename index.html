@@ -671,7 +671,7 @@
                 <div class="switch-container">
                     <div class="switch-label">
                         Chat Only
-                        <span class="switch-desc">Only parse executed chat messages and /msg, /r, /mail</span>
+                        <span class="switch-desc">Only parse chat across all channels (global, local, nation, staff, trade, discord, msg, reply, mail)</span>
                     </div>
                     <label class="switch">
                         <input type="checkbox" id="chatOnly">
@@ -1012,8 +1012,43 @@
 
         // Parsing Utilities
         const LINE_REGEX = /^\[(\d{2}:\d{2}:\d{2})\] \[(.*?)\]: (.*)$/;
-        const EXPLICIT_CHAT_REGEX = /\[CHAT\]/;
-        const CHAT_COMMANDS = ['/msg', '/r', '/mail'];
+
+        // Data-driven parsing rules. Add a new channel/exclude/redaction here and it is
+        // automatically picked up by analyzeLine — no other code changes needed.
+        const PARSER_RULES = {
+            channels: {
+                nation_chat:    /\[NATION\]/,
+                staff_chat:     /\[STAFF\]/,
+                trade_chat:     /\[TRADE\]/,
+                discord_bridge: /\[Discord\]/,
+                local_chat:     /\[L\]/,
+                private_msg:    /\/msg /,
+                private_reply:  /\/r /,
+                mail_service:   /\/mail /,
+                global_chat:    /\[CHAT\](?!.*\[NATION\])(?!.*\[STAFF\])(?!.*\[TRADE\])(?!.*\[Discord\])(?!.*\[L\])/
+            },
+            excludes: [
+                /\/WARN\]/, /\[WARN\]/, /Lost connection:/, /\/paper:callback/,
+                /Regenerating a lootable at world-nether/, /\[illegal-item-remover\]/,
+                /Grim »/, /\[ZNPCsPlus\]/, /\[PersistentLootables\]/,
+                /execute in minecraft:/, /Pasted schematic /,
+                /Named entity EntityZombie\[/, /Villager EntityVillager\[/,
+                /Failed to regenerate item frame at Location\{/, /\[User Authenticator #/,
+                /Regenerating /, /\[Jeracraft\]/, /\[luckperms-command-executor\/INFO\]/,
+                /\[legit\]/, /\[luckperms-worker-/,
+                /Caused by: java\.lang\.IllegalStateException:/, /\[Region Scheduler Thread/,
+                /java\.lang\.Throwable: null/, /java\.lang\.NullPointerException: null/,
+                /java\.lang\.NullPointerException:/, /\[RegionFile I\/O Thread #1\/ERROR\]:/,
+                /java\.io\.UTFDataFormatException:/
+            ],
+            redactions: [
+                { pattern: /\[Folia Async Scheduler Thread #[0-9]+\/INFO\]:\s*/g, replace: '' },
+                { pattern: /\[Region Scheduler Thread #[0-9]+\/INFO\]:\s*/g, replace: '' },
+                { pattern: /\[JDA MainWS-ReadThread\/INFO\]:\s*/g, replace: '' },
+                { pattern: /\[SurvivalCore\]\s*/g, replace: '' },
+                { pattern: /\[\/\d{1,3}(?:\.\d{1,3}){3}:\d+\]/g, replace: '' }
+            ]
+        };
 
         function parseUsernames(inputStr) {
             return inputStr.split(/[\s,]+/).filter(u => u.length > 0).map(u => u.toLowerCase());
@@ -1079,37 +1114,44 @@
 
         function analyzeLine(rawLine, usernames, customWords, isManagementMode) {
             const match = rawLine.match(LINE_REGEX);
-            if (!match) return { isHit: false, cleaned: rawLine, isCommand: false, isChat: false, user: null };
+            if (!match) return { isHit: false, cleaned: rawLine, isCommand: false, isChat: false, executedCmd: null, channels: [], user: null };
 
             const time = match[1];
             const thread = match[2];
             let payload = match[3];
 
-            let isChat = EXPLICIT_CHAT_REGEX.test(payload);
+            // Excludes run before all other parsing — drop noisy lines entirely
+            if (PARSER_RULES.excludes.some(re => re.test(payload))) {
+                return { isHit: false, cleaned: payload, isCommand: false, isChat: false, executedCmd: null, channels: [], user: null, rawLine };
+            }
+
+            // Channel detection — a line may belong to multiple channels
+            const channels = [];
+            for (const [name, re] of Object.entries(PARSER_RULES.channels)) {
+                if (re.test(payload)) channels.push(name);
+            }
+            const isChat = channels.length > 0;
+
             let isCommand = false;
             let user = null;
             let executedCmd = null;
 
             const cmdMatch = payload.match(/^(.*?) issued server command: (.*)$/);
             if (cmdMatch) {
-                const executedCmdText = cmdMatch[2];
-                // Exclude /paper:callback noise entirely
-                if (!executedCmdText.toLowerCase().startsWith('/paper:callback')) {
-                    isCommand = true;
-                    user = cmdMatch[1].toLowerCase();
-                    executedCmd = executedCmdText;
-                }
-            } else if (isChat) {
-                // Try to extract username from chat
-                // [CHAT] [L] [STAFF] Admin user > msg
-                // [CHAT] [L] Admin user > msg
-                // Example: [SurvivalCore] [CHAT] [L] Dragon Slayer gigachatboy [GREEN] > is that how the math works?
-                // Just use generic search for the username since format can vary heavily by plugins
+                isCommand = true;
+                user = cmdMatch[1].toLowerCase();
+                executedCmd = cmdMatch[2];
+            }
+
+            // Apply redactions to produce the displayed/exported line
+            let cleaned = payload;
+            for (const r of PARSER_RULES.redactions) {
+                cleaned = cleaned.replace(r.pattern, r.replace);
             }
 
             // Determine if hit
             let isHit = false;
-            payload = payload.toLowerCase();
+            const lowerPayload = payload.toLowerCase();
 
             if (isManagementMode) {
                 // Management mode: all chat and commands are hits
@@ -1119,22 +1161,22 @@
                 let matchesUser = usernames.length === 0; // If no users specified, match all for rules
                 if (usernames.length > 0) {
                     if (isCommand && usernames.includes(user)) matchesUser = true;
-                    if (!isCommand) { // checking payload for username 
-                        matchesUser = usernames.some(u => payload.includes(u));
+                    if (!isCommand) { // checking payload for username
+                        matchesUser = usernames.some(u => lowerPayload.includes(u));
                     }
                 }
 
                 if (matchesUser) {
                     let passesTypeFilter = true;
                     if (chatOnlySwitch.checked) {
-                        passesTypeFilter = isChat || (isCommand && executedCmd && CHAT_COMMANDS.some(c => executedCmd.toLowerCase().startsWith(c)));
+                        passesTypeFilter = isChat;
                     } else if (commandsOnlySwitch.checked) {
                         passesTypeFilter = isCommand;
                     }
 
                     let matchesCustom = customWords.length === 0;
                     if (customWords.length > 0) {
-                        matchesCustom = customWords.some(w => payload.includes(w));
+                        matchesCustom = customWords.some(w => lowerPayload.includes(w));
                     }
 
                     if (passesTypeFilter && matchesCustom) {
@@ -1150,11 +1192,12 @@
             }
 
             return {
-                isHit: isHit,
-                cleaned: match[3],
+                isHit,
+                cleaned,
                 isCommand,
                 isChat,
                 executedCmd,
+                channels,
                 rawLine
             };
         }
@@ -1165,7 +1208,7 @@
 
             // Furthermore, they must still adhere to filters if they are applied (e.g. chat only)
             if (chatOnlySwitch.checked) {
-                return analyzedLine.isChat || (analyzedLine.isCommand && analyzedLine.executedCmd && CHAT_COMMANDS.some(c => analyzedLine.executedCmd.toLowerCase().startsWith(c)));
+                return analyzedLine.isChat;
             }
             if (commandsOnlySwitch.checked) {
                 return analyzedLine.isCommand;
