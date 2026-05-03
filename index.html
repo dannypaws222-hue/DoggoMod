@@ -897,7 +897,7 @@
 
         let selectedFiles = [];
         let viewerSelectedFiles = [];
-        const CONTEXT_LINES = 15;
+        const CONTEXT_LINES = 10;
         const ADMIN_PASS_HASH = "86afb151a5706bccd55ae8c514011469afc8b9a6a4a6da7e4695ced3d7d0ed9c";
         const LOUISE_SOAP_WORDS = "fuck, faggot, fagot, nazi, nigger, nigga, asshole, bitch, dick, pussy, retard, wank, anus, cunt, twat, twot, slut, ejaculate, masturbate, blowjob, hitler";
 
@@ -1233,43 +1233,38 @@
                 progressStatus.innerText = `Analyzing ${allLines.length} lines...`;
 
                 let output = [];
-                let hitIndices = [];
 
-                // 1. First Pass: Analyze all lines and find hits
-                let analyzedArray = [];
-                for (let i = 0; i < allLines.length; i++) {
-                    const line = allLines[i];
-                    if (!line.trim()) {
-                        analyzedArray.push(null);
-                        continue;
-                    }
-
-                    const analyzed = analyzeLine(line, usernames, customWords, isManagementMode);
-                    analyzedArray.push(analyzed);
-
-                    if (analyzed && analyzed.isHit) {
-                        hitIndices.push(i);
+                // 1. First Pass: Analyze and pre-filter to the "2nd to final state" —
+                //    only lines that pass excludes AND the active type filter (Chat Only / Commands Only).
+                //    Context arithmetic runs on this filtered list so ±10 means 10 qualifying lines,
+                //    not 10 raw log lines.
+                const filteredLines = [];
+                for (const rawLine of allLines) {
+                    if (!rawLine.trim()) continue;
+                    const analyzed = analyzeLine(rawLine, usernames, customWords, isManagementMode);
+                    if (isContextValid(analyzed, isManagementMode)) {
+                        filteredLines.push(analyzed);
                     }
                 }
 
+                const hitIndices = filteredLines
+                    .map((l, i) => l.isHit ? i : -1)
+                    .filter(i => i !== -1);
+
                 progressStatus.innerText = `Found ${hitIndices.length} matches. Generating output...`;
 
-                // 2. Second Pass: Build output based on hits and context
+                // 2. Second Pass: Build output from hits and their context in the filtered list
                 if (hitIndices.length === 0) {
                     output.push("No matches found given the criteria.");
                 } else {
                     if (isStrict) {
-                        hitIndices.forEach(idx => output.push(analyzedArray[idx].cleaned));
+                        hitIndices.forEach(idx => output.push(filteredLines[idx].cleaned));
                     } else {
-                        // Gather context
                         let lastContextEnd = -1;
 
-                        for (let i = 0; i < hitIndices.length; i++) {
-                            const hitIdx = hitIndices[i];
+                        for (const hitIdx of hitIndices) {
                             const startIdx = Math.max(0, hitIdx - CONTEXT_LINES);
-                            const endIdx = Math.min(analyzedArray.length - 1, hitIdx + CONTEXT_LINES);
-
-                            // Calculate actual lines to add to avoid overlapping context with previous hits
+                            const endIdx = Math.min(filteredLines.length - 1, hitIdx + CONTEXT_LINES);
                             const actualStart = Math.max(startIdx, lastContextEnd + 1);
 
                             if (actualStart > lastContextEnd + 1 && lastContextEnd !== -1) {
@@ -1277,14 +1272,8 @@
                             }
 
                             for (let j = actualStart; j <= endIdx; j++) {
-                                const anLine = analyzedArray[j];
-                                if (!anLine) continue;
-
-                                if (isContextValid(anLine, isManagementMode)) {
-                                    output.push(anLine.cleaned);
-                                }
+                                output.push(filteredLines[j].cleaned);
                             }
-                            // Update lastContextEnd to maximum we iterated
                             lastContextEnd = Math.max(lastContextEnd, endIdx);
                         }
                     }
