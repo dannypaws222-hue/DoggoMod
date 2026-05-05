@@ -1058,19 +1058,6 @@
             return inputStr.split(/[,]+/).map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
         }
 
-        async function readAllLines(files) {
-            let lines = [];
-            for (let file of selectedFiles) {
-                progressStatus.innerText = `Reading ${file.name}...`;
-                if (file.name.endsWith('.gz')) {
-                    lines = lines.concat(await readGzFile(file));
-                } else {
-                    lines = lines.concat(await readTextFile(file));
-                }
-            }
-            return lines;
-        }
-
         function readTextFile(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -1229,34 +1216,44 @@
                 const customWords = parseCustomWords(customSearchInput.value);
                 const isStrict = strictModeSwitch.checked;
 
-                const allLines = await readAllLines(selectedFiles);
-                progressStatus.innerText = `Analyzing ${allLines.length} lines...`;
-
                 let output = [];
+                let totalHits = 0;
 
-                // 1. First Pass: Analyze and pre-filter to the "2nd to final state" —
-                //    only lines that pass excludes AND the active type filter (Chat Only / Commands Only).
-                //    Context arithmetic runs on this filtered list so ±10 means 10 qualifying lines,
-                //    not 10 raw log lines.
-                const filteredLines = [];
-                for (const rawLine of allLines) {
-                    if (!rawLine.trim()) continue;
-                    const analyzed = analyzeLine(rawLine, usernames, customWords, isManagementMode);
-                    if (isContextValid(analyzed, isManagementMode)) {
-                        filteredLines.push(analyzed);
+                // Process files in the order they were selected (1.log before 2.log, etc.)
+                // so the final output preserves upload order and groups each file's
+                // parsed section under a "----- <filename> -----" header.
+                for (const file of selectedFiles) {
+                    progressStatus.innerText = `Reading ${file.name}...`;
+                    const rawLines = file.name.endsWith('.gz')
+                        ? await readGzFile(file)
+                        : await readTextFile(file);
+
+                    progressStatus.innerText = `Analyzing ${file.name} (${rawLines.length} lines)...`;
+
+                    // Pre-filter to the "2nd to final state": only lines that pass
+                    // excludes AND the active type filter. Context arithmetic runs
+                    // on this filtered list, scoped per-file so context never bleeds
+                    // across file boundaries.
+                    const filteredLines = [];
+                    for (const rawLine of rawLines) {
+                        if (!rawLine.trim()) continue;
+                        const analyzed = analyzeLine(rawLine, usernames, customWords, isManagementMode);
+                        if (isContextValid(analyzed, isManagementMode)) {
+                            filteredLines.push(analyzed);
+                        }
                     }
-                }
 
-                const hitIndices = filteredLines
-                    .map((l, i) => l.isHit ? i : -1)
-                    .filter(i => i !== -1);
+                    const hitIndices = filteredLines
+                        .map((l, i) => l.isHit ? i : -1)
+                        .filter(i => i !== -1);
 
-                progressStatus.innerText = `Found ${hitIndices.length} matches. Generating output...`;
+                    if (hitIndices.length === 0) continue;
 
-                // 2. Second Pass: Build output from hits and their context in the filtered list
-                if (hitIndices.length === 0) {
-                    output.push("No matches found given the criteria.");
-                } else {
+                    totalHits += hitIndices.length;
+
+                    if (output.length > 0) output.push('');
+                    output.push(`----- ${file.name} -----`);
+
                     if (isStrict) {
                         hitIndices.forEach(idx => output.push(filteredLines[idx].cleaned));
                     } else {
@@ -1277,6 +1274,12 @@
                             lastContextEnd = Math.max(lastContextEnd, endIdx);
                         }
                     }
+                }
+
+                progressStatus.innerText = `Found ${totalHits} matches. Generating output...`;
+
+                if (output.length === 0) {
+                    output.push("No matches found given the criteria.");
                 }
 
                 progressStatus.innerText = 'Finalizing file...';
